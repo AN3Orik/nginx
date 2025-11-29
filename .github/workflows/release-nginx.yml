@@ -47,9 +47,18 @@ jobs:
         shell: bash
         run: |
           sudo apt update
-          sudo apt install -y build-essential libpcre3-dev zlib1g-dev libssl-dev
+          sudo apt install -y build-essential libpcre2-dev zlib1g-dev libssl-dev
           chmod +x auto/configure
-          auto/configure --prefix=/opt/nginx --with-http_ssl_module
+          ./auto/configure \
+            --prefix=/opt/nginx \
+            --with-http_ssl_module \
+            --with-http_v2_module \
+            --with-http_realip_module \
+            --with-http_stub_status_module \
+            --with-stream \
+            --with-stream_ssl_module \
+            --with-stream_realip_module \
+            --with-stream_ssl_preread_module
           make -j"$(nproc)"
           make install DESTDIR="$PWD/out"
           tar czf "${{ matrix.artifact_name }}" -C out .
@@ -63,9 +72,18 @@ jobs:
             sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/*.repo &&
             dnf clean all &&
             dnf -y groupinstall 'Development Tools' &&
-            dnf install -y pcre-devel zlib-devel openssl-devel &&
+            dnf install -y pcre2-devel zlib-devel openssl-devel &&
             chmod +x auto/configure &&
-            auto/configure --prefix=/opt/nginx --with-http_ssl_module &&
+            ./auto/configure \
+              --prefix=/opt/nginx \
+              --with-http_ssl_module \
+              --with-http_v2_module \
+              --with-http_realip_module \
+              --with-http_stub_status_module \
+              --with-stream \
+              --with-stream_ssl_module \
+              --with-stream_realip_module \
+              --with-stream_ssl_preread_module &&
             make -j\$(nproc) &&
             make install DESTDIR=/src/out
           "
@@ -73,12 +91,59 @@ jobs:
 
       - name: Build on Windows
         if: ${{ matrix.distro == 'windows' }}
+        shell: cmd
+        run: |
+          :: Install MSYS2 and Strawberry Perl via Chocolatey
+          choco install -y strawberryperl msys2 --no-progress
+          
+          :: Set up Visual Studio environment
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          
+          :: Add tools to PATH (Strawberry Perl first, then MSYS2)
+          set "PATH=C:\Strawberry\perl\bin;C:\Strawberry\c\bin;%PATH%;C:\msys64\usr\bin"
+          
+          :: Create directories
+          mkdir objs\lib 2>nul
+          
+          :: Download dependencies
+          echo Downloading PCRE2...
+          curl -L -o objs\lib\pcre2.zip https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.44/pcre2-10.44.zip
+          powershell -Command "Expand-Archive -Path objs\lib\pcre2.zip -DestinationPath objs\lib -Force"
+          move objs\lib\pcre2-10.44 objs\lib\pcre2
+          del objs\lib\pcre2.zip
+          
+          echo Downloading zlib...
+          curl -L -o objs\lib\zlib.tar.gz https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
+          tar -xzf objs\lib\zlib.tar.gz -C objs\lib
+          move objs\lib\zlib-1.3.1 objs\lib\zlib
+          del objs\lib\zlib.tar.gz
+          
+          echo Downloading OpenSSL...
+          curl -L -o objs\lib\openssl.tar.gz https://github.com/openssl/openssl/releases/download/openssl-3.4.0/openssl-3.4.0.tar.gz
+          tar -xzf objs\lib\openssl.tar.gz -C objs\lib
+          move objs\lib\openssl-3.4.0 objs\lib\openssl
+          del objs\lib\openssl.tar.gz
+          
+          :: Run configure with MSYS2 bash
+          echo Configuring nginx...
+          C:\msys64\usr\bin\bash.exe -c "auto/configure --with-cc=cl --prefix= --conf-path=conf/nginx.conf --pid-path=logs/nginx.pid --http-log-path=logs/access.log --error-log-path=logs/error.log --sbin-path=nginx.exe --http-client-body-temp-path=temp/client_body_temp --http-proxy-temp-path=temp/proxy_temp --http-fastcgi-temp-path=temp/fastcgi_temp --http-scgi-temp-path=temp/scgi_temp --http-uwsgi-temp-path=temp/uwsgi_temp --with-cc-opt=-DFD_SETSIZE=1024 --with-pcre=objs/lib/pcre2 --with-zlib=objs/lib/zlib --with-openssl=objs/lib/openssl --with-openssl-opt=no-asm --with-http_ssl_module --with-http_v2_module --with-http_realip_module --with-http_stub_status_module --with-stream --with-stream_ssl_module --with-stream_realip_module --with-stream_ssl_preread_module"
+          
+          :: Build with nmake
+          echo Building nginx...
+          nmake
+          
+          :: Create output structure
+          mkdir nginx-windows\logs 2>nul
+          mkdir nginx-windows\temp 2>nul
+          copy objs\nginx.exe nginx-windows\
+          xcopy /E /I conf nginx-windows\conf
+          xcopy /E /I docs\html nginx-windows\html
+
+      - name: Package Windows build
+        if: ${{ matrix.distro == 'windows' }}
         shell: pwsh
         run: |
-          choco install -y visualstudio2022buildtools strawberryperl msys2
-          $vcvars = "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat"
-          & "C:\Windows\System32\cmd.exe" /c "call `"$vcvars`" x64 && bash -lc 'chmod +x auto/configure && auto/configure && nmake -f objs/Makefile && nmake install -f objs/Makefile'"
-          Compress-Archive -Path objs,conf,docs -DestinationPath "${{ matrix.artifact_name }}"
+          Compress-Archive -Path nginx-windows -DestinationPath "${{ matrix.artifact_name }}"
 
       - name: Upload binary to Release
         uses: svenstaro/upload-release-action@v2
