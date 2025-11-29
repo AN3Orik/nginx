@@ -99,11 +99,13 @@ jobs:
           :: Set up Visual Studio environment
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
           
-          :: Add tools to PATH (Strawberry Perl first, then MSYS2)
-          set "PATH=C:\Strawberry\perl\bin;C:\Strawberry\c\bin;%PATH%;C:\msys64\usr\bin"
+          :: Add tools to PATH (Strawberry Perl first, then MSYS2 at the end)
+          set "PATH=C:\Strawberry\perl\bin;C:\Strawberry\c\bin;%PATH%;C:\tools\msys64\usr\bin"
           
           :: Create directories
           mkdir objs\lib 2>nul
+          mkdir logs 2>nul
+          mkdir temp 2>nul
           
           :: Download dependencies
           echo Downloading PCRE2...
@@ -125,8 +127,13 @@ jobs:
           del objs\lib\openssl.tar.gz
           
           :: Run configure with MSYS2 bash
+          :: First convert line endings from CRLF to LF for all shell scripts
+          echo Converting line endings...
+          set MSYSTEM=MSYS
+          C:\tools\msys64\usr\bin\bash.exe -c "find . -name '*.sh' -o -name 'configure' -o -path './auto/*' | xargs -r dos2unix 2>/dev/null || find . -name '*.sh' -o -name 'configure' -o -path './auto/*' | xargs -r sed -i 's/\r$//'"
+          
           echo Configuring nginx...
-          C:\msys64\usr\bin\bash.exe -c "auto/configure --with-cc=cl --prefix= --conf-path=conf/nginx.conf --pid-path=logs/nginx.pid --http-log-path=logs/access.log --error-log-path=logs/error.log --sbin-path=nginx.exe --http-client-body-temp-path=temp/client_body_temp --http-proxy-temp-path=temp/proxy_temp --http-fastcgi-temp-path=temp/fastcgi_temp --http-scgi-temp-path=temp/scgi_temp --http-uwsgi-temp-path=temp/uwsgi_temp --with-cc-opt=-DFD_SETSIZE=1024 --with-pcre=objs/lib/pcre2 --with-zlib=objs/lib/zlib --with-openssl=objs/lib/openssl --with-openssl-opt=no-asm --with-http_ssl_module --with-http_v2_module --with-http_realip_module --with-http_stub_status_module --with-stream --with-stream_ssl_module --with-stream_realip_module --with-stream_ssl_preread_module"
+          C:\tools\msys64\usr\bin\bash.exe -c "auto/configure --with-cc=cl --prefix= --conf-path=conf/nginx.conf --pid-path=logs/nginx.pid --http-log-path=logs/access.log --error-log-path=logs/error.log --sbin-path=nginx.exe --http-client-body-temp-path=temp/client_body_temp --http-proxy-temp-path=temp/proxy_temp --http-fastcgi-temp-path=temp/fastcgi_temp --http-scgi-temp-path=temp/scgi_temp --http-uwsgi-temp-path=temp/uwsgi_temp --with-cc-opt=-DFD_SETSIZE=1024 --with-pcre=objs/lib/pcre2 --with-zlib=objs/lib/zlib --with-openssl=objs/lib/openssl --with-openssl-opt=no-asm --with-http_ssl_module --with-http_v2_module --with-http_realip_module --with-http_stub_status_module --with-stream --with-stream_ssl_module --with-stream_realip_module --with-stream_ssl_preread_module"
           
           :: Build with nmake
           echo Building nginx...
