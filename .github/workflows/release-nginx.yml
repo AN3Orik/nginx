@@ -53,11 +53,14 @@ jobs:
           make install DESTDIR="$PWD/out"
           tar czf "${{ matrix.artifact_name }}" -C out .
 
-      - name: Build on CentOS
+      - name: Build on CentOS 8 (via container)
         if: ${{ matrix.distro == 'centos' }}
         shell: bash
         run: |
           docker run --rm -v "$PWD":/src -w /src centos:8 bash -c "
+            sed -i 's|mirrorlist=|#mirrorlist=|g' /etc/yum.repos.d/*.repo &&
+            sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/*.repo &&
+            dnf clean all &&
             dnf -y groupinstall 'Development Tools' &&
             dnf install -y pcre-devel zlib-devel openssl-devel &&
             ./configure --prefix=/opt/nginx --with-http_ssl_module &&
