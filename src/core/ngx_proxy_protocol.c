@@ -51,7 +51,7 @@ typedef struct {
 typedef struct {
     u_char                                  type;
     u_char                                  len[2];
-} ngx_proxy_protocol_tlv_t;
+} ngx_proxy_protocol_tlv_hdr_t;
 
 
 typedef struct {
@@ -723,9 +723,9 @@ static ngx_int_t
 ngx_proxy_protocol_lookup_tlv(ngx_connection_t *c, ngx_str_t *tlvs,
     ngx_uint_t type, ngx_str_t *value)
 {
-    u_char                    *p;
-    size_t                     n, len;
-    ngx_proxy_protocol_tlv_t  *tlv;
+    u_char                        *p;
+    size_t                         n, len;
+    ngx_proxy_protocol_tlv_hdr_t  *tlv;
 
     ngx_log_debug1(NGX_LOG_DEBUG_CORE, c->log, 0,
                    "PROXY protocol v2 lookup tlv:%02xi", type);
@@ -734,16 +734,16 @@ ngx_proxy_protocol_lookup_tlv(ngx_connection_t *c, ngx_str_t *tlvs,
     n = tlvs->len;
 
     while (n) {
-        if (n < sizeof(ngx_proxy_protocol_tlv_t)) {
+        if (n < sizeof(ngx_proxy_protocol_tlv_hdr_t)) {
             ngx_log_error(NGX_LOG_ERR, c->log, 0, "broken PROXY protocol TLV");
             return NGX_ERROR;
         }
 
-        tlv = (ngx_proxy_protocol_tlv_t *) p;
+        tlv = (ngx_proxy_protocol_tlv_hdr_t *) p;
         len = ngx_proxy_protocol_parse_uint16(tlv->len);
 
-        p += sizeof(ngx_proxy_protocol_tlv_t);
-        n -= sizeof(ngx_proxy_protocol_tlv_t);
+        p += sizeof(ngx_proxy_protocol_tlv_hdr_t);
+        n -= sizeof(ngx_proxy_protocol_tlv_hdr_t);
 
         if (n < len) {
             ngx_log_error(NGX_LOG_ERR, c->log, 0, "broken PROXY protocol TLV");
