@@ -1,0 +1,83 @@
+name: release-nginx
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create_release:
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create.outputs.upload_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        id: create
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: manual-${{ github.run_id }}
+          release_name: "Manual Release ${{ github.run_id }}"
+          draft: false
+          prerelease: false
+
+  build_and_upload:
+    needs: create_release
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            distro: debian
+            artifact_name: nginx-debian-amd64.tar.gz
+          - os: ubuntu-latest
+            distro: centos
+            artifact_name: nginx-centos-amd64.tar.gz
+          - os: windows-latest
+            distro: windows
+            artifact_name: nginx-windows-amd64.zip
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build on Debian
+        if: ${{ matrix.distro == 'debian' }}
+        shell: bash
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential libpcre3-dev zlib1g-dev libssl-dev
+          ./configure --prefix=/opt/nginx --with-http_ssl_module
+          make -j"$(nproc)"
+          make install DESTDIR="$PWD/out"
+          tar czf "${{ matrix.artifact_name }}" -C out .
+
+      - name: Build on CentOS
+        if: ${{ matrix.distro == 'centos' }}
+        shell: bash
+        run: |
+          docker run --rm -v "$PWD":/src -w /src centos:7 bash -c "
+            yum groupinstall -y 'Development Tools' &&
+            yum install -y pcre-devel zlib-devel openssl-devel &&
+            ./configure --prefix=/opt/nginx --with-http_ssl_module &&
+            make -j\$(nproc) &&
+            make install DESTDIR=/src/out
+          "
+          tar czf "${{ matrix.artifact_name }}" -C out .
+
+      - name: Build on Windows
+        if: ${{ matrix.distro == 'windows' }}
+        shell: pwsh
+        run: |
+          choco install -y visualstudio2022buildtools strawberryperl msys2
+          $vcvars = "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat"
+          & "C:\Windows\System32\cmd.exe" /c "call `"$vcvars`" x64 && bash -lc 'auto/configure && nmake -f objs/Makefile && nmake install -f objs/Makefile'"
+          Compress-Archive -Path objs,conf,docs -DestinationPath "${{ matrix.artifact_name }}"
+
+      - name: Upload binary to Release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ matrix.artifact_name }}
+          asset_name: ${{ matrix.artifact_name }}
+          tag: ${{ steps.create.outputs.tag_name }}
